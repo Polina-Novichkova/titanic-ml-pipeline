@@ -32,17 +32,32 @@ titles = {
 dt['Title'] = dt['Name'].str.extract(r' ([A-Za-z]+)\.', expand = False)
 dt['Title'] = dt['Title'].replace(titles)
 
+#Заполнение пропусков
 dt['Embarked'] = dt['Embarked'].fillna('S')
-dt['Age'] = dt['Age'].fillna(dt['Age'].median())
+dt['Age'] = dt.groupby('Title')['Age'].transform(lambda x: x.fillna(x.median()))
 dt['Fare'] = dt['Fare'].fillna(dt['Fare'].median())
 
+#Новые фичи
 dt['Family_Size'] = dt['SibSp'] + dt['Parch'] + 1
 dt['Alone'] = (dt['Family_Size'] == 1).astype(int)
-dt['Fare_log'] = np.log1p(dt['Fare'])
-    
-dt['Sex'] = dt['Sex'].map({'female': 0, 'male': 1})
-dt = pd.get_dummies(dt, columns = ['Embarked', 'Title'], drop_first = True, dtype = int)
+dt['Child'] = (dt['Age'] < 12).astype(int)
+dt['Deck'] = dt['Cabin'].str[0].fillna('Unknown')
+dt['Deck'] = dt['Deck'].replace(['T'], 'Unknown')
 
+ticket_counts = dt['Ticket'].value_counts
+dt['Group_Size'] = dt['Ticket'].map(ticket_counts)
+group_size_num = pd.to_numeric(dt['Group_Size'], errors='coerce').fillna(1)
+fare_num = pd.to_numeric(dt['Fare'], errors='coerce').fillna(0)
+dt['Fare_Per_Person'] = fare_num / group_size_num
+dt['Group_Size'] = group_size_num.astype(int)
+dt['Fare_Per_Person'] = dt['Fare_Per_Person'].astype(float)
+dt['Fare_log'] = np.log1p(fare_num)
+
+#Кодирование категориальных фичей  
+dt['Sex'] = dt['Sex'].map({'female': 0, 'male': 1})
+dt = pd.get_dummies(dt, columns = ['Embarked', 'Title', 'Deck'], drop_first = True, dtype = int)
+
+#Удаление лишнего
 drop_cols = ['PassengerId', 'Name', 'Ticket', 'Cabin']
 dt = dt.drop(columns = [col for col in drop_cols if col in dt.columns])
 
