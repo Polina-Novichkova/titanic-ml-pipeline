@@ -1,48 +1,28 @@
 import os
 import pandas as pd
-from catboost import CatBoostClassifier
-from lightgbm import LGBMClassifier
-from preprocessing import load_data, test_clean, train_clean
-from sklearn.ensemble import VotingClassifier
-from xgboost import XGBClassifier
-from sklearn.ensemble import RandomForestClassifier
+from preprocessing import prepare_features
+from model import build_ensemble_model
+from config import SUBMISSION_DIR
 
-X_train = train_clean.drop(columns=['Survived'], errors='ignore')
-y_train = train_clean['Survived']
-X_test = test_clean[X_train.columns]
+def main():
+    print("1. Подготовка данных и фичей...")
+    X_train, y_train, X_test, passenger_ids = prepare_features()
 
-cb = CatBoostClassifier(
-    depth=5, iterations=150, learning_rate=0.03, random_seed=42, verbose=0
-)
-lgb = LGBMClassifier(
-    max_depth=5,
-    n_estimators=100,
-    learning_rate=0.03,
-    random_state=42,
-    verbose=-1,
-)
-xgb = XGBClassifier(
-    max_depth=3,
-    n_estimators=100,
-    learning_rate=0.1,
-    random_state=42,
-    eval_metric='logloss',
-)
+    print("2. Обучение ансамбля моделей...")
+    model = build_ensemble_model()
+    model.fit(X_train, y_train)
 
-rf = RandomForestClassifier(
-    n_estimators=100, max_depth=5, random_state=42, n_jobs=-1
-)
+    print("3. Предсказание результатов на тестовой выборке...")
+    predictions = model.predict(X_test)
 
-voting_hard_model = VotingClassifier(
-    estimators=[('cat', cb), ('lgb', lgb), ('xgb', xgb), ('rf', rf)],
-    voting='hard',
-)
-voting_hard_model.fit(X_train, y_train)
+    os.makedirs(SUBMISSION_DIR, exist_ok=True)
+    submission_path = os.path.join(SUBMISSION_DIR, 'voting_hard_submission.csv')
 
-orig_test = load_data('test.csv')
-submission = pd.DataFrame(
-    {'PassengerId': orig_test['PassengerId'], 'Survived': voting_hard_model.predict(X_test)}
-)
+    submission = pd.DataFrame({
+        'PassengerId': passenger_ids,
+        'Survived': predictions
+    })
+    submission.to_csv(submission_path, index=False)
 
-os.makedirs('submissions', exist_ok=True)
-submission.to_csv('submissions/voting_hard_submission.csv', index=False)
+if __name__ == '__main__':
+    main()

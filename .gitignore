@@ -1,7 +1,7 @@
 venv/
 data/
+submissions/
 .ipynb_checkpoints/
-*.csv
 
 __pycache__/
 *.py[cod]
@@ -14,6 +14,5 @@ Thumbs.db
 
 *.log
 
-__pycache__/
 catboost_info/
 
