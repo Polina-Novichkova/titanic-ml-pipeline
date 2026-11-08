@@ -1,6 +1,9 @@
 venv/
+.venv/
+
 data/
 submissions/
+
 .ipynb_checkpoints/
 
 __pycache__/
@@ -16,3 +19,4 @@ Thumbs.db
 
 catboost_info/
 
+.env

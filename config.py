@@ -39,3 +39,6 @@ RF_PARAMS = {
     'random_state': RANDOM_STATE,
     'n_jobs': -1
 }
+
+MODEL_TYPE = 'voting'
+VOTING_TYPE = 'hard'

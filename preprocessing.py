@@ -5,6 +5,7 @@ import pandas as pd
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def load_data(filename):
+    """Загружает CSV-файл из доступной директории проекта"""
     paths = [
         os.path.join(BASE_DIR, '..', 'data', filename),
         os.path.join(BASE_DIR, 'data', filename),
@@ -16,15 +17,20 @@ def load_data(filename):
             return pd.read_csv(p)
     raise FileNotFoundError(f'Файл {filename} не найден!')
 
-def prepare_features():
-    train = load_data('train.csv')
-    test = load_data('test.csv')
+def prepare_features(train=None, test=None):
+    """Подготавливает признаки для обучения и предсказания модели"""
+    if train is None:
+        train = load_data('train.csv')
+    if test is None:
+        test = load_data('test.csv')
+    train = train.copy()
+    test = test.copy()
     
+    y_train = train['Survived'].astype(int)
+    train = train.drop(columns=['Survived'])
+    test = test.drop(columns=['Survived'], errors='ignore')
     test_passenger_ids = test['PassengerId']
-
-    dt = pd.concat([train, test], ignore_index=True)
-
-    dt['Title'] = dt['Name'].str.extract(r'([A-Za-z]+)\.', expand=False)
+    
     titles = {
         'Mlle': 'Miss',
         'Ms': 'Miss',
@@ -39,47 +45,39 @@ def prepare_features():
         'Col': 'Other',
         'Major': 'Other',
         'Dr': 'Other',
-        'Rev': 'Other',
+        'Rev': 'Other'
     }
-    dt['Title'] = dt['Title'].replace(titles)
+    
+    train['Title'] = train['Name'].str.extract(r'([A-Za-z]+)\.', expand=False)
+    test['Title'] = test['Name'].str.extract(r'([A-Za-z]+)\.', expand=False)
 
-    #Пропуски и базовые фичи
-    dt['Age'] = dt.groupby('Title')['Age'].transform(lambda x: x.fillna(x.median()))
-    dt['Fare'] = dt['Fare'].fillna(dt['Fare'].median())
+    train['Title'] = train['Title'].replace(titles)
+    test['Title'] = test['Title'].replace(titles)
+    
+    dt = pd.concat([train, test], ignore_index=True)
+
+    # Пропуски и базовые фичи
+    age_med = train.groupby('Title')['Age'].median()
+    age_median = train['Age'].median()
+    fare_med = train['Fare'].median()
+    emb_mode = train['Embarked'].mode()[0]
+    
+    dt['Age'] = dt['Age'].fillna(dt['Title'].map(age_med)).fillna(age_median)
+    dt['Fare'] = dt['Fare'].fillna(fare_med)
+    dt['Embarked'] = dt['Embarked'].fillna(emb_mode)
+    
     dt['Family_Size'] = dt['SibSp'] + dt['Parch'] + 1
     dt['Alone'] = (dt['Family_Size'] == 1).astype(int)
 
-    ticket_counts = dt['Ticket'].value_counts()
-    dt['Group_Size'] = dt['Ticket'].map(ticket_counts)
+    ticket_counts = train['Ticket'].value_counts()
+    dt['Group_Size'] = dt['Ticket'].map(ticket_counts).fillna(1)
     dt['Fare_Per_Person'] = dt['Fare'] / dt['Group_Size']
     dt['Fare_log'] = np.log1p(dt['Fare'])
 
     dt['Deck'] = dt['Cabin'].str[0].fillna('Unknown')
     dt['Deck'] = dt['Deck'].replace(['T'], 'Unknown')
 
-    #Групповая выживаемость
-    dt['Surname'] = dt['Name'].apply(lambda x: x.split(',')[0].strip())
-    dt['Family_ID'] = dt['Surname'] + '_' + dt['Fare'].astype(str)
-    dt['Is_Woman_Child'] = ((dt['Sex'] == 'female') | (dt['Title'] == 'Master')).astype(int)
-    dt['Group_Survival'] = 0.5
-
-    #Выживаемость по билетам
-    for ticket, group in dt.groupby('Ticket'):
-        if len(group) > 1:
-            train_wc = group[(group['Survived'].notnull()) & (group['Is_Woman_Child'] == 1)]
-            if len(train_wc) > 0:
-                dt.loc[dt['Ticket'] == ticket, 'Group_Survival'] = train_wc['Survived'].mean()
-
-    #Выживаемсоть по семьям
-    for fam_id, group in dt.groupby('Family_ID'):
-        if len(group) > 1:
-            train_wc = group[(group['Survived'].notnull()) & (group['Is_Woman_Child'] == 1)]
-            if len(train_wc) > 0:
-                mask = (dt['Family_ID'] == fam_id) & (dt['Group_Survival'] == 0.5)
-                dt.loc[mask, 'Group_Survival'] = train_wc['Survived'].mean()
-
     dt['Sex'] = dt['Sex'].map({'female': 0, 'male': 1}).astype(int)
-    dt['Embarked'] = dt['Embarked'].fillna('S')
     dt = pd.get_dummies(dt, columns=['Embarked', 'Title', 'Deck', 'Pclass'], drop_first=True, dtype=int)
 
     drop_cols = [
@@ -89,19 +87,14 @@ def prepare_features():
         'Cabin',
         'Fare',
         'SibSp',
-        'Parch',
-        'Surname',
-        'Family_ID',
-        'Is_Woman_Child',
+        'Parch'
     ]
     dt = dt.drop(columns=[col for col in drop_cols if col in dt.columns])
 
-    train_clean = dt[dt['Survived'].notnull()].copy()
-    test_clean = dt[dt['Survived'].isnull()].drop(columns=['Survived']).copy()
-    train_clean['Survived'] = train_clean['Survived'].astype(int)
-
-    X_train = train_clean.drop(columns=['Survived'])
-    y_train = train_clean['Survived']
+    train_clean = dt.iloc[:len(train)].copy()
+    test_clean = dt.iloc[len(train):].copy()
+    
+    X_train = train_clean
     X_test = test_clean[X_train.columns]
 
     return X_train, y_train, X_test, test_passenger_ids
